@@ -13,8 +13,6 @@ desired_spacing_dict = {
 
     'heart': (1.5, 1.5, 1.5), # decathlon
 
-    # 'prostate': (1.25, 1.25, 1.25), # decathlon, not used
-
     'hippocampus': (0.75, 0.75, 0.75), # decathlon
 
     'pancreas': (2.0, 2.0, 2.0), # decathlon
@@ -38,8 +36,6 @@ crop_dict = {
 
     'heart': (135, 189, 155),
 
-    # 'prostate': (135, 189, 155), # decathlon, not used
-
     'hippocampus': (135, 189, 155),
 
     'pancreas': (160, 160, 160),
@@ -51,7 +47,37 @@ crop_dict = {
     'lung': (160, 160, 160), # decathlon, was not defined
 
     'hepaticvessel': (160, 160, 160), # decathlon, was not defined
-    
+
     'colon': (160, 160, 160), # decathlon, was not defined
 
 }
+
+# define n channel for each dataset. i believe all the CT datasets only have 1 channel
+n_channel_dict = {
+    'spleen': 1,
+    'heart': 1,
+    'hippocampus': 1,
+    'pancreas': 1,
+    'liver': 1,
+    'kidney': 1,
+    'lung': 1,
+    'hepaticvessel': 1,
+    'colon': 1,
+
+    }
+
+# define number of classes in segmentation for each dataset
+# this is important because not every slice in a single image from each dataset contains all the classes
+n_class_dict = {
+    'spleen': 2,
+    'heart': 2,
+    'hippocampus': 3,
+    'pancreas': 3,
+    'liver': 3,
+    'sliver': 2,
+    'kidney': 3,
+    'lung': 2,
+    'hepaticvessel': 3,
+    'colon': 2,
+
+    }

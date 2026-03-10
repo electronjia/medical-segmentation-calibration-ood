@@ -1,0 +1,23 @@
+
+March 8 2026
+- matplotlib can not plot ct images in subplots and save them. instead used plt.imsave to save individual CT images.
+
+march 10, 2026
+tensorflow vs pytorch data loading
+- tensorflow accepts data in format (batch, x,y,z,c) where x=width, y=height, z=depth, c=channels. 
+- pytorch accepts the data in format (batch, channels, z=depth, y=height, x=width).
+
+loss funciton may require ne-hot encoding
+- in pre_processing.py file, line ~223 includes Y_vol definition without n_class in (n_class, z,y,x) dimension for one hot encoding
+- make sure to change the above if the loss function requires one hot encoding
+
+ran into an array mismatch error: "
+    Traceback (most recent call last):
+  File "C:\Users\mkkad\Desktop\github_repos\medical-segmentation-calibration-ood\pre_processing.py", line 333, in <module>
+    pre_processor.process_all_volumes()
+  File "C:\Users\mkkad\Desktop\github_repos\medical-segmentation-calibration-ood\pre_processing.py", line 270, in process_all_volumes
+    Y_vol[index, indiv_class, ...] = (final_label == indiv_class).astype(np.float32)
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+    ValueError: could not broadcast input array from shape (160,159,159) into shape (160,160,160)"
+
+- to do: ensure the cropped segmentation overlaps properly the input. compare original segmentation+input overlap and processed segmentation+input overlap

@@ -1,0 +1,30 @@
+undefined datasets:
+
+kits19: Original spacing: (0.5, 0.919921875, 0.919921875) ,Original size: (611, 512, 512)
+
+liver_decathlon: Original spacing: (0.703125, 0.703125, 5.0), Original size: (512, 512, 75)
+
+lung: Original spacing: (0.693359375, 0.693359375, 1.0), Original size: (512, 512, 304)
+
+hepaticvessel: Original spacing: (0.9179689884185791, 0.9179689884185791, 5.0), Original size: (512, 512, 49)
+
+colon: Original spacing: (0.7792969942092896, 0.7792969942092896, 7.5), Original size: (512, 512, 60)
+
+
+defined datasets:
+
+spleen: Original spacing: (0.9765620231628418, 0.9765620231628418, 5.0), Original size: (512, 512, 55) had defined desired spacing of (1.5, 1.5, 1.5) and sx sy sz of (135, 189, 155)
+
+
+pancreas: Original spacing: (0.6445310115814209, 0.6445310115814209, 2.5), Original size: (512, 512, 110) had desired spacing of (2.0, 2.0, 2.0) and sx sy sz of (160, 160, 160)
+
+
+hippocampus: Original spacing: (1.0, 1.0, 1.0), Original size: (35, 51, 35) had desired spacing of  (0.75, 0.75, 0.75) and sx sy sz of (135, 189, 155)
+
+
+heart: Original spacing: (1.25, 1.25, 1.3700000047683716), Original size: (320, 320, 130) had defined desired spacing of (1.5, 1.5, 1.5) and sx sy sz of (135, 189, 155)
+
+
+sliver: Original spacing: (0.74219, 0.74219, 1.5), Original size: (512, 512, 183) had desired spacing of (2.5, 2.5, 2.5) and sx sy sz of (160, 160, 160)
+
+

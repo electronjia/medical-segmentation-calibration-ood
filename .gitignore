@@ -194,3 +194,4 @@ cython_debug/
 # data folders
 archive/
 data/
+debugging/

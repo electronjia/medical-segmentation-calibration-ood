@@ -21,3 +21,23 @@ ran into an array mismatch error: "
     ValueError: could not broadcast input array from shape (160,159,159) into shape (160,160,160)"
 
 - to do: ensure the cropped segmentation overlaps properly the input. compare original segmentation+input overlap and processed segmentation+input overlap
+
+
+March 12, 2026
+- SITK order of index and dimensions explanation (x,y,z): https://simpleitk.org/SimpleITK-Notebooks/01_Image_Basics.html
+- resolution to above dimension mismatch issue originated from mismatching input and label volume spacing. in the resampling, i used the image grid produced by the input volume and re-used this image grid on the label volume while resampling. this seemed to have resolved the issue.
+- i was also running into a lot of issues using matplotlib pyplot imshow function. it just did not work on anything. i used cv2 to create overlay masks for debugging.
+- i load the CT scan using SITK which gives xyz, then get numpy array which gives zyx, then transpose to xyz
+
+- ran into an error with hdf5 files:   File "C:\Users\mkkad\Desktop\github_repos\medical-segmentation-calibration-ood\pre_processing.py", line 408, in <module>
+      File "C:\Users\mkkad\Desktop\github_repos\medical-segmentation-calibration-ood\pre_processing.py", line 400, in process_all_volumes
+
+      File "C:\Users\mkkad\anaconda3\Lib\site-packages\h5py\_hl\group.py", line 183, in create_dataset
+        dsid = dataset.make_new_dset(group, shape, dtype, data, name, **kwds)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "C:\Users\mkkad\anaconda3\Lib\site-packages\h5py\_hl\dataset.py", line 104, in make_new_dset
+        dcpl = filters.fill_dcpl(
+              ^^^^^^^^^^^^^^^^^^
+      File "C:\Users\mkkad\anaconda3\Lib\site-packages\h5py\_hl\filters.py", line 159, in fill_dcpl
+        raise TypeError(
+      TypeError: Scalar datasets don't support chunk/filter options

@@ -1,0 +1,7 @@
+crop and segment function used for:
+- spleen
+- heart
+- prostate: two types of cropping and segmentation but i am not using prostate data i believe
+- hippocampus
+- pancreas
+- liver ct

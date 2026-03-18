@@ -41,3 +41,30 @@ March 12, 2026
       File "C:\Users\mkkad\anaconda3\Lib\site-packages\h5py\_hl\filters.py", line 159, in fill_dcpl
         raise TypeError(
       TypeError: Scalar datasets don't support chunk/filter options
+
+
+March 14, 2026
+- the solution to above issue was two-fold: 1. convert all data types to eligible data types using convert_for_json function. 2. use json data format and not dictionary to write it to hdf5 file. I opened the saved hdf5 and the following were the shapes: X=[N,1,ZYX]
+- ran into another error with matching the images after resampling and cropping to obtain overlay figures for debugging. changed the code again.
+- cropping of kits is definitely wrong or it seems wrong? because the ct images are cropped by quite a lot: read the code and it seems like it needs to be cropped to make sure only rlevant stuff is passed to model, otherwise the data is huge
+
+Match 15, 2026
+- ran into an error with kits19 data saving into hdf5 and it was due to me missing to reset the index when subsetting the dataframe.
+- the task 2 heart overlay images look inconsistent. i dont know what to do about this so i leave it be. the task 3 liver overlay figures look good tho
+- i changed the dimensions of non-cube dimensions to 160,160,160 for consistency. i do not know if that was a good step tho.
+
+March 16, 2026
+- i ran into this error with task 3 liver data (not used in the paper): Processing Task03_Liver: 0%| | 0/107 [00:23<?, ?it/s] 
+  Traceback (most recent call last): 
+  File "C:\Users\mkkad\Desktop\github_repos\medical-segmentation-calibration-ood\pre_processing.py", line 442, in <module> 
+  pre_processor.process_all_volumes() File "C:\Users\mkkad\Desktop\github_repos\medical-segmentation-calibration-ood\pre_processing.py", line 329, in process_all_volumes 
+  resampled_seg_extent = self.get_segmentation_extent(resampled_label_array) # get segmentation extent of the resampled label volume 
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+  File "C:\Users\mkkad\Desktop\github_repos\medical-segmentation-calibration-ood\pre_processing.py", line 43, in get_segmentation_extent 
+  non_zero_label[0].min(), non_zero_label[0].max(), 
+  ^^^^^^^^^^^^^^^^^^^^^^^ 
+  File "C:\Users\mkkad\anaconda3\Lib\site-packages\numpy\core\_methods.py", line 45, in _amin 
+  return umr_minimum(a, axis, None, out, keepdims, initial, where) ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ValueError: zero-size array to reduction operation minimum which has no identity
+
+- reason why above error was happening: the label classes of original label were 3 classes (e.g. 0,1,2) but the label classes of resampled label was just 1 (e.g 0). GPT mentioned that it might be due to resampling funciton. in the function label array does not have the properties of input image assigned to it (e.g. spacing, origin, direction). I changed the code to include these properties when resampling the label. it seemed to have fixed the code
+- need to confirm the other datasets are still functional with above change. the task liver still had issues due to label array mismatch.

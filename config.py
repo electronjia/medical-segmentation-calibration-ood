@@ -9,7 +9,7 @@ label_col = 'label'
 
 # pre-processing parameters
 desired_spacing_dict = {
-    'spleen': (1.5, 1.5, 1.5), # decathlon
+    'spleen': (1.5, 1.5, 1.5), # decathlon, task 5 spleen data 34 had mismatched label array size
 
     'heart': (1.5, 1.5, 1.5), # decathlon
 
@@ -19,7 +19,7 @@ desired_spacing_dict = {
 
     'sliver': (2.5, 2.5, 2.5), #sliver
 
-    'liver': (1.5,1.5,1.5), # decathlon, was not defined
+    'liver': (1.5,1.5,1.5), # decathlon, was not used. i was not able to use task liver due to data issues.
 
     'kidney': (1.0,1.0,1.0), # kits19, was not defined
 
@@ -32,15 +32,15 @@ desired_spacing_dict = {
 
 # define sx, sy, sz
 crop_dict = {
-    'spleen': (135, 189, 155),
+    'spleen': (160, 160, 160), # in the paper it is (135, 189, 155)
 
-    'heart': (135, 189, 155),
+    'heart': (160, 160, 160),  # in the paper it is (135, 189, 155)
 
-    'hippocampus': (135, 189, 155),
+    'hippocampus': (160, 160, 160), # in the paper it is (135, 189, 155)
 
     'pancreas': (160, 160, 160),
 
-    'liver': (160, 160, 160), # sliver, decathlon, was not defined
+    'liver': (160, 160, 160), # sliver, decathlon, was not defined. i was not able to use task liver due to data issues. only sliver was used.
 
     'kidney': (160, 160, 160), # kits19, was not defined
 
@@ -58,7 +58,7 @@ n_channel_dict = {
     'heart': 1,
     'hippocampus': 1,
     'pancreas': 1,
-    'liver': 1,
+    'liver': 1, # i was not able to use task liver due to data issues. only sliver was used.
     'kidney': 1,
     'lung': 1,
     'hepaticvessel': 1,
@@ -73,7 +73,7 @@ n_class_dict = {
     'heart': 2,
     'hippocampus': 3,
     'pancreas': 3,
-    'liver': 3,
+    'liver': 3, # i was not able to use task liver due to data issues. only sliver was used.
     'sliver': 2,
     'kidney': 3,
     'lung': 2,

@@ -13,6 +13,7 @@ import h5py
 from tqdm import tqdm 
 import matplotlib.image as mpimg
 import cv2
+import json
 
 class PreProcessor:
     def __init__(self):
@@ -110,7 +111,12 @@ class PreProcessor:
         # transpose to (x,y,z)
         resampled_input_array = np.transpose(resampled_input_array, (2,1,0))
 
-        # resample the label next using the image grid from input array___________________________________________________________________________________________
+        # force label to use th input image geometry before resampling___________________________________________________________________________________________
+        label_volume.SetOrigin(input_volume.GetOrigin())
+        label_volume.SetSpacing(input_volume.GetSpacing())
+        label_volume.SetDirection(input_volume.GetDirection())
+
+        # resample the label next using the image grid from input array
         resampler.SetReferenceImage(resampled_input_volume)
 
         # resample the label volume (xyz) using the proper resampling mode for the label
@@ -150,7 +156,7 @@ class PreProcessor:
         else:
             label_mask = label_img
 
-        overlay_path = "_".join(["debugging/overlay"] + input_path.split("_")[1:])
+        overlay_path = "_".join(["debugging/overlay"] + os.path.basename(input_path).replace("_input", "").split("_"))
 
         # normalize input to 0-255
         input_img = (input_img * 255).astype(np.uint8)
@@ -167,7 +173,7 @@ class PreProcessor:
 
         cv2.imwrite(overlay_path, overlay)
 
-    def save_plots_for_debugging(self, input_array, label_array, axis='z', slice_number=None, processing_type="resampling"):
+    def save_plots_for_debugging(self, input_array, label_array, axis='z', slice_number=None, processing_type="resampling", dataset_name=None, case_number=None):
         # saves a single slice from z axis in the middle
 
         # get middle z slice to save
@@ -176,8 +182,8 @@ class PreProcessor:
         input_slice = input_array[:,:,idx]
         label_slice = label_array[:,:,idx]
         
-        input_path = f"debugging/input_{processing_type}_{axis}_{idx}.png"
-        label_path = f"debugging/label_{processing_type}_{axis}_{idx}.png"
+        input_path = f"debugging/{dataset_name}_case{case_number}_{processing_type}_input_{axis}_{idx}.png"
+        label_path = f"debugging/{dataset_name}_case{case_number}_{processing_type}_label_{axis}_{idx}.png"
 
         plt.imsave(input_path, input_slice, cmap='gray')
         plt.imsave(label_path, label_slice, cmap='gray')
@@ -222,14 +228,45 @@ class PreProcessor:
 
         # pad if needed
         # print(f"{cropped_input_array.shape=}, {cropped_label_array.shape=}") # if troubleshooting the sizes
-        pad_width = [(0, max(0, desired - cropped)) for desired, cropped in zip(new_shape, cropped_input_array.shape)]
-        if any(pad > 0 for _, pad in pad_width):
-            cropped_input_array = np.pad(cropped_input_array, pad_width, mode='constant', constant_values=0)
-            cropped_label_array = np.pad(cropped_label_array, pad_width, mode='constant', constant_values=0)
+        pad_width = []
 
-        # print(f"{cropped_input_array.shape=}, {cropped_label_array.shape=}") # if troubleshooting the sizes
+        for desired, cropped in zip(new_shape, cropped_input_array.shape):
+            diff = max(0, desired - cropped)
+            pad_before = diff // 2
+            pad_after = diff - pad_before
+            pad_width.append((pad_before, pad_after))
+
+        cropped_input_array = np.pad(cropped_input_array, pad_width, mode='constant')
+        cropped_label_array = np.pad(cropped_label_array, pad_width, mode='constant')
+
+        assert cropped_input_array.shape == new_shape and cropped_label_array.shape == new_shape
 
         return cropped_input_array, cropped_label_array, slices, pad_width
+
+    def convert_for_json(self, obj):
+
+        if isinstance(obj, np.integer):
+            return int(obj)
+
+        if isinstance(obj, np.floating):
+            return float(obj)
+
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+
+        if isinstance(obj, tuple):
+            return list(obj)
+
+        if isinstance(obj, slice):
+            return {"start": obj.start, "stop": obj.stop, "step": obj.step}
+
+        if isinstance(obj, list):
+            return [self.convert_for_json(i) for i in obj]
+
+        if isinstance(obj, dict):
+            return {k: self.convert_for_json(v) for k, v in obj.items()}
+
+        return obj
 
     def process_all_volumes(self, to_print=True, to_debug=False):
         # Read the excel file containing the file paths
@@ -237,20 +274,17 @@ class PreProcessor:
 
         # unique datasets in the excel file
         unique_datasets = df[self.dataset_name_col].unique()
-
-        # 🐞 for debugging
-        if to_debug:
-            unique_datasets = unique_datasets[0:1] # only take the first dataset for now, for testing purposes
+        unique_datasets = unique_datasets
+        # task 3 liver did not work out due to data issues. task 5 spleen [index 8] did not work due to
 
         # Iterate through each row in the dataframe and load the volumes
         for unique_dataset in unique_datasets:
             df_subset = df[df[self.dataset_name_col] == unique_dataset]
-            object = df_subset[self.object_col].iloc[0].lower() # get the object name for the dataset, and make it lowercase for consistency
+            # df_subset = df_subset[52]
+            df_subset = df_subset.reset_index(drop=True)
             
-            # 🐞 for debugging
-            if to_debug:
-                df_subset = df_subset[0:1] # only take the first row of each dataset for now, for testing purposes
-                    
+            object = df_subset[self.object_col].iloc[0].lower() # get the object name for the dataset, and make it lowercase for consistency
+               
             # get the pre-processing parameters for the dataset
             desired_spacing = self.desired_spacing_dict[object]
             n_class = self.n_class_dict[object]
@@ -265,9 +299,10 @@ class PreProcessor:
 
 
             # arrays to keep track of stuff
+            # when defining the shape, i am following pytorch's suggestions on having zyx format
             volume_info_dict = {} # create an array to store the info of the volumes
-            X_vol = np.zeros((N, n_channel, *new_shape), np.float32) # create an array to store the input volumes
-            Y_vol = np.zeros((N, n_class, *new_shape), np.float32) # create an array to store the label volumes
+            X_vol = np.zeros((N, n_channel, new_shape[2], new_shape[1], new_shape[0]), np.float32) # create an array to store the input volumes
+            Y_vol = np.zeros((N, n_class, new_shape[2], new_shape[1], new_shape[0]), np.float32) # create an array to store the label volumes
             # the above Y_vol does not assume one-hot encoding, however this may change if the loss function required one hot encoding
 
             for index, row in tqdm(df_subset.iterrows(), total=len(df_subset), desc=f"Processing {unique_dataset}"):
@@ -291,41 +326,45 @@ class PreProcessor:
 
                 # 2️⃣ resample the input and label volumes to the desired spacing
                 resampled_input_volume, resampled_input_array, resampled_label_volume, resampled_label_array  = self.resample_volume(input_volume, label_volume, input_spacing, label_spacing, desired_spacing, sitk.sitkBSpline,sitk.sitkNearestNeighbor )
-
                 resampled_input_spacing, resampled_input_size = self.get_volume_info(resampled_input_volume) # get spacing and size of the resampled input volume
                 resampled_label_spacing, resampled_label_size = self.get_volume_info(resampled_label_volume) # get spacing and size of the resampled label volume
                 resampled_seg_extent = self.get_segmentation_extent(resampled_label_array) # get segmentation extent of the resampled label volume
+
+                # make sure the correct number of classes exist in resampled label array
+                assert len(np.unique(label_array)) == len(np.unique(resampled_label_array)), f"The unique values in original and resampled label arrays do not match: {len(np.unique(label_array))} and {len(np.unique(resampled_label_array))}"
 
                 # 3️⃣crop and pad the resampled input and label arrays to the desired crop size
                 cropped_input_array, cropped_label_array, slices, pad_width = self.crop_volume(resampled_input_array, resampled_label_array, new_shape)
 
                 cropped_seg_extent = self.get_segmentation_extent(cropped_label_array) # get segmentation extent of the cropped label volume
 
-                #  🐞 define a slice to debug  
-                crop_z_start, crop_z_end = slices[-1].start, slices[-1].stop
-                resampled_depth =  resampled_input_array.shape[-1]   
-                resampled_z_slice = resampled_depth // 2
-                cropped_z_slice = (crop_z_start + min(resampled_depth, crop_z_end)) // 2
+                # 🐞 define a slice to debug
 
+                # center of crop in resampled volume
+                resampled_z_slice = resampled_input_array.shape[2] // 2
+
+                # convert to cropped coordinates
+                cropped_z_slice = cropped_input_array.shape[2] // 2
+
+                # convert to original coordinates
                 phys_slice = resampled_z_slice * desired_spacing[2]
                 orig_z_slice = int(round(phys_slice / input_spacing[2]))
 
-                #  🐞 to debug the z slice definition for orig input, resampled input, cropped input
-                # print(f"{slices=}")
-                # print(f"{crop_z_start=}, {crop_z_end=}, {resampled_depth=}")
-                # print(f"{input_array.shape=}, {resampled_input_array.shape=}, {cropped_input_array.shape=}")
-                # print(f"{orig_z_slice=}, {resampled_z_slice=}, {cropped_z_slice=}")
-
-
-                if to_print:
-                    self.save_plots_for_debugging(input_array, label_array, slice_number=orig_z_slice, processing_type=f"new={resampled_z_slice}")
-                    self.save_plots_for_debugging(resampled_input_array, resampled_label_array, slice_number=resampled_z_slice, processing_type="resampling")
-                    self.save_plots_for_debugging(cropped_input_array, cropped_label_array, slice_number=cropped_z_slice, processing_type="cropping")
-
+                # 🐞 to debug the z slice definition for orig input, resampled input, cropped input
+                if to_debug:               
+                    print(f"{slices=}")
+                    print(f"{input_array.shape=}, {resampled_input_array.shape=}, {cropped_input_array.shape=}")
+                    print(f"{orig_z_slice=}, {resampled_z_slice=}, {cropped_z_slice=}")
                 
                 # 4️⃣ normalize image                
                 cropped_input_array[cropped_input_array < 0] = 0 # set the negative volume to 0
                 cropped_input_array = cropped_input_array / (input_std + 1e-8)
+
+                if to_print:
+                    self.save_plots_for_debugging(input_array, label_array, slice_number=orig_z_slice, processing_type=f"", dataset_name=unique_dataset.lower(), case_number=case_number)
+                    self.save_plots_for_debugging(resampled_input_array, resampled_label_array, slice_number=resampled_z_slice, processing_type="resampling", dataset_name=unique_dataset.lower(), case_number=case_number)
+                    self.save_plots_for_debugging(cropped_input_array, cropped_label_array, slice_number=cropped_z_slice, processing_type=f"cropping", dataset_name=unique_dataset.lower(), case_number=case_number)
+
 
                 # 5️⃣ final channel dimension and add channel dimension for pytorch
                 final_input = self.final_channel_dimension(cropped_input_array, lambda x: np.transpose(x, (2,1,0))) # transpose to ( z, y, x)
@@ -342,62 +381,63 @@ class PreProcessor:
                 volume_info_dict[f'{unique_dataset.lower()}_{object.lower()}_case{case_number}'] = {
                     'dataset': unique_dataset.lower(),
                     'object': object.lower(),
-                    'case_number': case_number,
+                    'case_number': self.convert_for_json(case_number),
                     'input_path': input_path,
                     'label_path': label_path,
 
-                    'n_channel': n_channel,
-                    'n_class': n_class,
-                    'desired_spacing': desired_spacing,
-                    'new_shape': new_shape,
+                    'n_channel': self.convert_for_json(n_channel),
+                    'n_class': self.convert_for_json(n_class),
+                    'desired_spacing': self.convert_for_json(desired_spacing),
+                    'new_shape': self.convert_for_json(new_shape),
 
-                    'input_spacing': input_spacing,
-                    'input_size': input_size,
-                    'input_physical_size': np.array(input_spacing) * np.array(input_size),
-                    'label_spacing': label_spacing,
-                    'label_size': label_size,
-                    'label_extent': seg_extent,
-                    'label_physical_size': np.array(input_spacing) * (np.array(seg_extent[1::2])- np.array(seg_extent[0::2])),
-                    'label_bounding_box_size': (np.array(seg_extent[1::2])- np.array(seg_extent[0::2])),
+                    'input_spacing': self.convert_for_json(input_spacing),
+                    'input_size': self.convert_for_json(input_size),
+                    'input_physical_size':self.convert_for_json( np.array(input_spacing) * np.array(input_size)),
+                    'label_spacing': self.convert_for_json(label_spacing),
+                    'label_size': self.convert_for_json(label_size),
+                    'label_extent': self.convert_for_json(seg_extent),
+                    'label_physical_size': self.convert_for_json(np.array(input_spacing) * (np.array(seg_extent[1::2])- np.array(seg_extent[0::2]))),
+                    'label_bounding_box_size': self.convert_for_json((np.array(seg_extent[1::2])- np.array(seg_extent[0::2]))),
 
-                    'resampeled_input_spacing': resampled_input_spacing,
-                    'resampled_input_size': resampled_input_size,
-                    'resampled_input_physical_size': np.array(resampled_input_spacing) * np.array(resampled_input_size),
-                    'resampled_label_spacing': resampled_label_spacing,
-                    'resampled_label_size': resampled_label_size,
-                    'resampled_label_extent': resampled_seg_extent,
-                    'resampled_label_physical_size': np.array(resampled_input_spacing) * (np.array(resampled_seg_extent[1::2])- np.array(resampled_seg_extent[0::2])),
-                    'resampled_label_bounding_box_size': (np.array(resampled_seg_extent[1::2])- np.array(resampled_seg_extent[0::2])),
+                    'resampeled_input_spacing': self.convert_for_json(resampled_input_spacing),
+                    'resampled_input_size': self.convert_for_json(resampled_input_size),
+                    'resampled_input_physical_size': self.convert_for_json(np.array(resampled_input_spacing) * np.array(resampled_input_size)),
+                    'resampled_label_spacing': self.convert_for_json(resampled_label_spacing),
+                    'resampled_label_size': self.convert_for_json(resampled_label_size),
+                    'resampled_label_extent': self.convert_for_json(resampled_seg_extent),
+                    'resampled_label_physical_size': self.convert_for_json(np.array(resampled_input_spacing) * (np.array(resampled_seg_extent[1::2])- np.array(resampled_seg_extent[0::2]))),
+                    'resampled_label_bounding_box_size': self.convert_for_json((np.array(resampled_seg_extent[1::2])- np.array(resampled_seg_extent[0::2]))),
 
-                    'cropped_input_shape': cropped_input_array.shape,
-                    'cropped_label_shape': cropped_label_array.shape,
-                    'cropping_slices': slices,
-                    'cropping_pad_width': pad_width,
-                    'cropped_label_extent': cropped_seg_extent,
-                    'cropped_label_bounding_box_size': (np.array(cropped_seg_extent[1::2])- np.array(cropped_seg_extent[0::2])),
+                    'cropped_input_shape': self.convert_for_json(cropped_input_array.shape),
+                    'cropped_label_shape': self.convert_for_json(cropped_label_array.shape),
+                    'cropping_slices': self.convert_for_json(slices),
+                    'cropping_pad_width': self.convert_for_json(pad_width),
+                    'cropped_label_extent': self.convert_for_json(cropped_seg_extent),
+                    'cropped_label_bounding_box_size': self.convert_for_json((np.array(cropped_seg_extent[1::2])- np.array(cropped_seg_extent[0::2]))),
 
-                    'final_input_shape': X_vol[index].shape,
-                    'final_label_shape': Y_vol[index].shape,
+                    'final_input_shape': self.convert_for_json(X_vol[index].shape),
+                    'final_label_shape': self.convert_for_json(Y_vol[index].shape),
                 }
 
-                if to_print:
+                if to_print and to_debug:
                     print(f"\n\n 🐞 Volume info for {unique_dataset} case {case_number}:")
                     for key, value in volume_info_dict[f'{unique_dataset.lower()}_{object.lower()}_case{case_number}'].items():
                         print(f"   {key}: {value}")
                     print("\n\n")
 
-
-
             # save to hpf5 file
             save_path = f"preprocessed_data/{unique_dataset.lower()}_{object.lower()}.h5"
+            info_json = json.dumps(self.convert_for_json(volume_info_dict))
             with h5py.File(save_path, "w") as f:
                 f.create_dataset("X", data=X_vol, compression="gzip")
                 f.create_dataset("Y", data=Y_vol, compression="gzip")
-                f.create_dataset("info", data=np.string_(str(volume_info_dict)), compression="gzip")
+                f.create_dataset("info", data=np.string_(info_json))
+
+                
+            
 
             if to_print:
                 print(f"✅ Saved {N} cases of {unique_dataset} ({object}) to {save_path}")
-
 
 if __name__ == "__main__":
     pre_processor = PreProcessor()

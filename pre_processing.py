@@ -268,7 +268,7 @@ class PreProcessor:
 
         return obj
 
-    def process_all_volumes(self, to_print=True, to_debug=False):
+    def process_all_volumes(self, to_print=True, to_debug=True):
         # Read the excel file containing the file paths
         df = pd.read_excel(self.excel_paths)
 
@@ -280,7 +280,6 @@ class PreProcessor:
         # Iterate through each row in the dataframe and load the volumes
         for unique_dataset in unique_datasets:
             df_subset = df[df[self.dataset_name_col] == unique_dataset]
-            # df_subset = df_subset[52]
             df_subset = df_subset.reset_index(drop=True)
             
             object = df_subset[self.object_col].iloc[0].lower() # get the object name for the dataset, and make it lowercase for consistency
@@ -354,6 +353,7 @@ class PreProcessor:
                 if to_debug:               
                     print(f"{slices=}")
                     print(f"{input_array.shape=}, {resampled_input_array.shape=}, {cropped_input_array.shape=}")
+                    print(f"{label_array.shape=}, {resampled_label_array.shape=}, {cropped_label_array.shape=}")
                     print(f"{orig_z_slice=}, {resampled_z_slice=}, {cropped_z_slice=}")
                 
                 # 4️⃣ normalize image                

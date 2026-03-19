@@ -7,7 +7,7 @@ object_col = 'object'
 input_col = 'input'
 label_col = 'label'
 
-# pre-processing parameters
+# pre-processing parameters_______________________________________________________________
 desired_spacing_dict = {
     'spleen': (1.5, 1.5, 1.5), # decathlon, task 5 spleen data 34 had mismatched label array size
 
@@ -30,7 +30,7 @@ desired_spacing_dict = {
     'colon': (1.5,1.5,1.5), # decathlon, was not defined
 }
 
-# define sx, sy, sz
+# define Sx, Sy, Sz
 crop_dict = {
     'spleen': (160, 160, 160), # in the paper it is (135, 189, 155)
 
@@ -81,3 +81,17 @@ n_class_dict = {
     'colon': 2,
 
     }
+
+
+# h5 dataset related parameters_______________________________________________
+preprocessed_data_path = r"preprocessed_data/"
+input_data_key = "X"
+label_data_key = "Y"
+data_info_key = "info"
+
+
+# deep learning related parameters_____________________________________________
+seed = 42
+train_frac = 0.3
+val_frac = 0.4
+test_frac = 0.3

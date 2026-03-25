@@ -1,7 +1,6 @@
 import torch
 from tqdm import tqdm
 import numpy as np
-from data import TongueCNEDatasetHandler
 from config import *
 import segmentation_models_pytorch.metrics as smp_metrics 
 import time

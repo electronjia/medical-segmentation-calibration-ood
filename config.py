@@ -1,3 +1,4 @@
+import torch
 # The code will include the file paths needed for this project
 # excel filepath and column names
 excel_paths = "medical_segmentation_datasets_filepaths.xlsx"
@@ -29,6 +30,13 @@ desired_spacing_dict = {
 
     'colon': (1.5,1.5,1.5), # decathlon, was not defined
 }
+
+# define chunk size
+# make sure it is not bigger than the new shape dimensions
+chunk_x = 96
+chunk_y = 96
+chunk_z = 96
+stride = chunk_x // 4
 
 # define Sx, Sy, Sz
 crop_dict = {
@@ -95,3 +103,4 @@ seed = 42
 train_frac = 0.3
 val_frac = 0.4
 test_frac = 0.3
+device = 'cuda' if torch.cuda.is_available() else 'cpu'

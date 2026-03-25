@@ -68,3 +68,10 @@ March 16, 2026
 
 - reason why above error was happening: the label classes of original label were 3 classes (e.g. 0,1,2) but the label classes of resampled label was just 1 (e.g 0). GPT mentioned that it might be due to resampling funciton. in the function label array does not have the properties of input image assigned to it (e.g. spacing, origin, direction). I changed the code to include these properties when resampling the label. it seemed to have fixed the code
 - need to confirm the other datasets are still functional with above change. the task liver still had issues due to label array mismatch.
+
+
+Mar 24, 2026
+- i verified today that the chunking piece of code des work properly. i tested it out with task heart data (index 2). Initially the data had size of (6,1,160,160,160) and after chunking it to 96^3 with stride=24 giving 3 patches (3^3=27 gives that much patches for the original volume). Heart dataset has 6 unique volumes with original 160^3 dimension and produces 162 patches after chunking.
+- ideas for improving train: generate n_train_samples while doing center jitter. len becomes = len(x) * len(n_train_samples) and in the get_item, introduce a for loop
+- validation and test evaluation, i can use monai for chunking data, predicting, and stitching chunks back
+- make sure the loss function accepts the format of predictions and labels which is batch number, zyx

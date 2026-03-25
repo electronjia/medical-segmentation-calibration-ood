@@ -64,18 +64,18 @@ class DataLoadingUtils():
 
         return train_idx, valid_idx, test_idx
     
-    def split_dataset(self, X, Y):
-        train_idxs, valid_idxs, test_idxs = self.data_split_indices(len(X))
+    def split_dataset(self, X, Y, info):
+        train_idxs, val_idxs, test_idxs = self.data_split_indices(len(X))
 
         print(f"Successfully split data!")
 
-        return X[train_idxs], Y[train_idxs], X[valid_idxs], Y[valid_idxs], X[test_idxs],  Y[test_idxs]
+        return X[train_idxs], Y[train_idxs], info[train_idxs], X[val_idxs], Y[val_idxs], info[val_idxs], X[test_idxs],  Y[test_idxs], info[test_idxs]
     
     def load_all_data(self):
 
         datasets = {}
 
-        for file in os.listdir(self.preprocessed_data_path)[1:4]:
+        for file in os.listdir(self.preprocessed_data_path)[:]:
 
             if file.endswith(".h5"):
                 name = file.replace(".h5", "")
@@ -83,10 +83,11 @@ class DataLoadingUtils():
 
                 print(f"Loading {name}...")
                 datasets[name] = self.load_h5_dataset(path)
+            
 
         return datasets
     
-    def split_all_data(self, dict_datasets, to_debug=True):
+    def split_all_data(self, dict_datasets, to_debug=False):
 
         #  this function unfortunately does the heavy lifting due to time constraints.
         #  it is splitting the data AND converting it into a pytorch Dataset object
@@ -96,19 +97,38 @@ class DataLoadingUtils():
         val_datasets = []
         test_datasets = []
 
+        # Iterate over each dataset
         for name, data in dict_datasets.items():
+
+            # get the input and label arrays
             X = data[self.input_data_key]
             Y = data[self.label_data_key]
+            info = data[self.data_info_key]
 
-            X_train, Y_train, X_val, Y_val, X_test, Y_test = self.split_dataset(X, Y)
-            train_datasets.append(MedicalDataset(X_train, Y_train, name))
-            val_datasets.append(MedicalDataset(X_val, Y_val, name))
-            test_datasets.append(MedicalDataset(X_test, Y_test, name))
+            # split each dataset so that each dataset can be in all stages
+            # the returned split dataset is unordinary in terms of shape: its like a list of various datasets and each dataset component contains input array, label array = ds[0]
+            X_train, Y_train, info_train, X_val, Y_val, info_val, X_test, Y_test, info_test = self.split_dataset(X, Y, info)
+            
+            # here the medical dataset class chunks and converts to tensor
+            train_datasets.append(MedicalDataset(X_train, Y_train, info_train, name, mode='train'))
+            val_datasets.append(MedicalDataset(X_val, Y_val, info_val, name, mode='val'))
+            test_datasets.append(MedicalDataset(X_test, Y_test, info_test, name, mode='test'))
 
         if to_debug:
-            for ds in train_datasets:
+            for ds, orig_ds in zip(train_datasets, dict_datasets.values()):
                 x, y = ds[0]
-                print(f"{ds.name}: len={len(ds)}, x={x.shape}, y={y.shape}")
+                
+                print(f"{ds.name} train: len={len(ds)}, x={x.shape}, y={y.shape}")
+                print(f"{len(orig_ds[self.input_data_key])=}")
+
+            for ds in val_datasets:
+                x, y = ds[0]
+                print(f"{ds.name} val: len={len(ds)}, x={x.shape}, y={y.shape} (orig:{len(X_val)})")
+
+            for ds in test_datasets:
+                x, y = ds[0]
+                print(f"{ds.name} test: len={len(ds)}, x={x.shape}, y={y.shape} (orig:{len(X_test)})")
+
 
         return train_datasets, val_datasets, test_datasets
 
@@ -154,27 +174,122 @@ class DataLoadingUtils():
         return torch.DoubleTensor(weights)
 
 class MedicalDataset(Dataset):
-    def __init__(self, X, Y, name=None, transform=None):
+    def __init__(self, X, Y, info, name=None, transform=None, mode='train'):
         self.X = X
         self.Y = Y
+        self.info = info
         self.name = name
         self.transform = transform
+        self.chunk_x = chunk_x
+        self.chunk_y = chunk_y
+        self.chunk_z = chunk_z
+        self.stride = stride
+        self.mode = mode
+
+        # get the chunk indices for validation and test
+        if self.mode != "train":
+            self.patch_indices = self.build_patch_index()
+
+    def build_patch_index(self):
+        """
+        The input arrays were stored in h5 files as 1,Z,Y,X while the label arrays either had 2 or 3 classes and were stored as 2,Z,Y,X or 3,Z,Y,X.
+        When defining the chunks, I need to ignore the channel dimension.
+        
+        The for loop will define how many total slides the original volume can be chunked into. 
+        For example for volums with dimensions of 1,160,160,160, the channel part will be skipped. For the depth, there can be 3 chunks with stride of 96//4=24 whose starting indices are 0, 24, 64 and ending indices are 0+96,24+96,64+96.
+
+        This function is run 3x because on lines 104-106, the class is called for each split type.
+
+        This function and method will only be used for validation and test datasets. All of the patches for these two datasets will be used.
+
+       """
+        
+        indices = []
+        for i in range(len(self.X)):  # each volume
+            SZ, SY, SX = self.X[i].shape[1:]  # skip Channel dimension
+
+            for z in range(0, SZ - self.chunk_z + 1, self.stride): # start with z dimension because it comes after channel
+                for y in range(0, SY - self.chunk_y + 1, self.stride): # continue with y dimension because it comes after z
+                    for x in range(0, SX - self.chunk_x + 1, self.stride): # end with x dimension because it comes after y
+                        indices.append((i, z, y, x))
+        return indices
 
     def __len__(self):
-        return len(self.X)
+        # This function calculates the total length of the dataset.
+        # because my dataset is chunked, the len(self.X) does not represent the true dataset now.
+        # after getting the chunking indices, the true data length is of that of chunk indices number
+        if self.mode == "train" or self.mode == "val" or self.mode == "test":
+            return len(self.X)
+        elif self.mode == 'chunk':
+            return len(self.patch_indices)
+        else:
+            print("Define the mode.")
 
     def __getitem__(self, idx):
-        x = self.X[idx]
-        y = self.Y[idx]
 
+        if self.mode == "train":
+
+            # only one patch will be saved for the train
+            x = self.X[idx]
+            y = self.Y[idx]
+            info_indiv = self.info[idx]
+
+            _, SZ, SY, SX = x.shape
+
+            # center
+            z_c, y_c, x_c = SZ//2, SY//2, SX//2
+
+            # compute jitter range
+            # make sure it doesnt go negative
+            jitter_z = (SZ - self.chunk_z)//2 - 5
+            jitter_y = (SY - self.chunk_y)//2 - 5
+            jitter_x = (SX - self.chunk_x)//2 - 5
+
+            # apply jitter
+            z_c += np.random.randint(-jitter_z, jitter_z + 1)
+            y_c += np.random.randint(-jitter_y, jitter_y + 1)
+            x_c += np.random.randint(-jitter_x, jitter_x + 1)
+
+            # convert center → start index
+            z0 = np.clip(z_c - self.chunk_z//2, 0, SZ - self.chunk_z)
+            y0 = np.clip(y_c - self.chunk_y//2, 0, SY - self.chunk_y)
+            x0 = np.clip(x_c - self.chunk_x//2, 0, SX - self.chunk_x)
+
+            patch_x = x[:, z0:z0+self.chunk_z, y0:y0+self.chunk_y, x0:x0+self.chunk_x]
+            patch_y = y[:, z0:z0+self.chunk_z, y0:y0+self.chunk_y, x0:x0+self.chunk_x]
+
+        elif self.mode == 'chunk':
+
+            # there are about 3 patches per each dimension (3^3) produced for each original volume
+            # this statement will be used for validation and test datasets when evaluating it during the validation and testing stages
+
+            # get the patch indices
+            i, z0, y0, x0 = self.patch_indices[idx] # there are several patches for each volume so it is important to use i from patch_indices to refer to the right original volume
+
+            # extract the patch including all channels
+            patch_x = self.X[i][:, z0:z0+self.chunk_z, y0:y0+self.chunk_y, x0:x0+self.chunk_x]
+            patch_y = self.Y[i][:, z0:z0+self.chunk_z, y0:y0+self.chunk_y, x0:x0+self.chunk_x]
+            info_indiv = self.info[i]
+
+        elif self.mode == 'val' or self.mode == 'test':
+            #  the validation and test datasets will not be processed here and will be saved as is. 
+            #  in the validation and testing stages, each volume will get chunked, ran thru model, stitched back together
+            patch_x = self.X[idx]
+            patch_y = self.Y[idx]
+            info_indiv = self.info[idx]
+
+        # apply transforms if any (on the patch, not the full volume)
         if self.transform:
-            x, y = self.transform(x, y)
+            patch_x, patch_y = self.transform(patch_x, patch_y)
 
-        return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+        # convert to PyTorch tensors
+        patch_x = torch.tensor(patch_x, dtype=torch.float32)
+        patch_y = torch.tensor(patch_y, dtype=torch.float32)
 
+        return patch_x, patch_y, info_indiv
+
+def get_dataloaders():
     
-
-if __name__ == "__main__":
     data_loading_utils = DataLoadingUtils()
     dict_datasets = data_loading_utils.load_all_data()
 
@@ -182,9 +297,15 @@ if __name__ == "__main__":
     train_datasets, val_datasets, test_datasets = data_loading_utils.split_all_data(dict_datasets)
 
     # ocncatenate the datasets
+    # the provided datasets have the type of pytorch dataset 
+    # to get the shape of the ConCat dataset type, do the following: train_combined.datasets[0].X.shape
     train_combined = data_loading_utils.concat_all_data(train_datasets)
     val_combined = data_loading_utils.concat_all_data(val_datasets)
     test_combined = data_loading_utils.concat_all_data(test_datasets)
+
+    print(f"{train_combined.datasets[0].X.shape=}")
+    print(f"{val_combined.datasets[0].X.shape=}")
+    print(f"{test_combined.datasets[0].X.shape=}")
 
     # get the sampling weights
     weights = data_loading_utils.build_sampling_weights(train_combined, mode='root-proportional')
@@ -194,12 +315,40 @@ if __name__ == "__main__":
 
     # create data loader
     train_loader = DataLoader(train_combined, batch_size=2, sampler=sampler)
+    val_loader = DataLoader(val_combined, batch_size=1, shuffle=False)
+    test_loader = DataLoader(test_combined, batch_size=1, shuffle=False)
+
+    return train_loader, val_loader, test_loader
+
+if __name__ == "__main__":
+    data_loading_utils = DataLoadingUtils()
+    dict_datasets = data_loading_utils.load_all_data()
+
+    # split the data
+    train_datasets, val_datasets, test_datasets = data_loading_utils.split_all_data(dict_datasets)
+
+    # ocncatenate the datasets
+    # the provided datasets have the type of pytorch dataset 
+    # to get the shape of the ConCat dataset type, do the following: train_combined.datasets[0].X.shape
+    train_combined = data_loading_utils.concat_all_data(train_datasets)
+    val_combined = data_loading_utils.concat_all_data(val_datasets)
+    test_combined = data_loading_utils.concat_all_data(test_datasets)
+
+    print(f"{train_combined.datasets[0].X.shape=} and {train_combined.datasets[0].Y.shape=}")
+    print(f"{val_combined.datasets[0].X.shape=} and {val_combined.datasets[0].Y.shape=}")
+    print(f"{test_combined.datasets[0].X.shape=} and {test_combined.datasets[0].Y.shape=}")
+
+    # get the sampling weights
+    weights = data_loading_utils.build_sampling_weights(train_combined, mode='root-proportional')
+
+    # crate weighted random sampler
+    sampler = WeightedRandomSampler(weights=weights, num_samples=len(weights), replacement=True)
+
+    # create data loader
+    train_loader = DataLoader(train_combined, batch_size=2, sampler=sampler)
+    val_loader = DataLoader(val_combined, batch_size=1, shuffle=False)
+    test_loader = DataLoader(test_combined, batch_size=1, shuffle=False)
     
-    # x, y = train_combined[0]
-    # print(f"len={len(train_combined)}, x={x.shape}, y={y.shape}")
-    # print(train_combined.datasets)
-    # # print(weights)
-    # print(len(weights))
 
 
     

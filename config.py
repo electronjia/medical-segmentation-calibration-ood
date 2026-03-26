@@ -99,8 +99,13 @@ data_info_key = "info"
 
 
 # deep learning related parameters_____________________________________________
+keep_keys = ['dataset', 'object', 'case_number'] # i can only keep certain keys because there are some keys that are None which are breaking the dataloader.
 seed = 42
 train_frac = 0.3
 val_frac = 0.4
 test_frac = 0.3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+n_classes = 3
+lr = 10.0e-5
+num_epochs = 150
+experiment_details = 'kits19_kidney_davood'

@@ -1,6 +1,7 @@
 # this file will contain data loading utilities such as loading h5 files, splitting data into train val and test sets, data augmentation, etc.
 
 import os
+import json
 import h5py
 import numpy as np
 import pandas as pd
@@ -19,6 +20,7 @@ class DataLoadingUtils():
         self.preprocessed_data_path =  preprocessed_data_path
 
         # deep learning related params
+        self.keep_keys = keep_keys
         self.seed = seed
         self.train_frac = train_frac
         self.val_frac = val_frac
@@ -43,7 +45,23 @@ class DataLoadingUtils():
                     data[k] = file[k][:]
 
             # loading info from h5 file is a little bit different because it is a "scalar" and reqiures [()]
-            data[self.data_info_key] = file[self.data_info_key][()]
+            info_bytes = file[self.data_info_key][()]  # scalar from HDF5
+
+            # Check type
+            if isinstance(info_bytes, bytes):
+                # Single bytes object
+                info_list = [json.loads(info_bytes.decode('utf-8'))]
+
+            elif isinstance(info_bytes, (np.ndarray, list)):
+                # Array of bytes
+                info_list = [json.loads(x.decode('utf-8')) for x in info_bytes]
+
+            else:
+                raise TypeError(f"Unexpected type {type(info_bytes)} for HDF5 info")
+
+            # info is now inside a list with len=1 so need to use [0] to access it
+            data[self.data_info_key] = info_list[0]
+
         return data
     
     def data_split_indices(self, n):
@@ -64,18 +82,32 @@ class DataLoadingUtils():
 
         return train_idx, valid_idx, test_idx
     
-    def split_dataset(self, X, Y, info):
+    def split_dataset(self, X, Y, info, to_debug=False):
         train_idxs, val_idxs, test_idxs = self.data_split_indices(len(X))
 
-        print(f"Successfully split data!")
+        all_case_keys = list(info.keys())
 
-        return X[train_idxs], Y[train_idxs], info[train_idxs], X[val_idxs], Y[val_idxs], info[val_idxs], X[test_idxs],  Y[test_idxs], info[test_idxs]
+        # split keys by indices
+        train_keys = [all_case_keys[i] for i in train_idxs]
+        val_keys   = [all_case_keys[i] for i in val_idxs]
+        test_keys  = [all_case_keys[i] for i in test_idxs]
+
+        # create a list of cleaned info dicts for each split
+        train_info = [{k: info[case_key][k] for k in self.keep_keys} for case_key in train_keys]
+        val_info   = [{k: info[case_key][k] for k in self.keep_keys} for case_key in val_keys]
+        test_info  = [{k: info[case_key][k] for k in self.keep_keys} for case_key in test_keys]
+
+        if to_debug:
+            print(f"{train_info=}, {val_info=}, {test_info=}")
+
+
+        return X[train_idxs], Y[train_idxs], train_info, X[val_idxs], Y[val_idxs], val_info, X[test_idxs],  Y[test_idxs], test_info
     
     def load_all_data(self):
 
         datasets = {}
 
-        for file in os.listdir(self.preprocessed_data_path)[:]:
+        for file in os.listdir(self.preprocessed_data_path)[:1]:
 
             if file.endswith(".h5"):
                 name = file.replace(".h5", "")
@@ -110,25 +142,26 @@ class DataLoadingUtils():
             X_train, Y_train, info_train, X_val, Y_val, info_val, X_test, Y_test, info_test = self.split_dataset(X, Y, info)
             
             # here the medical dataset class chunks and converts to tensor
-            train_datasets.append(MedicalDataset(X_train, Y_train, info_train, name, mode='train'))
+            train_datasets.append(MedicalDataset(X_train, Y_train, info_train, name, mode="train"))
             val_datasets.append(MedicalDataset(X_val, Y_val, info_val, name, mode='val'))
             test_datasets.append(MedicalDataset(X_test, Y_test, info_test, name, mode='test'))
 
         if to_debug:
             for ds, orig_ds in zip(train_datasets, dict_datasets.values()):
-                x, y = ds[0]
-                
-                print(f"{ds.name} train: len={len(ds)}, x={x.shape}, y={y.shape}")
-                print(f"{len(orig_ds[self.input_data_key])=}")
+                for idx, vol in enumerate(ds):
+                    x, y, info_ind = vol
+
+                    
+                    print(f"Line 142 {ds.name}-{idx} train: len={len(ds)}, x={x.shape}, y={y.shape}")
+                    print(f"{len(orig_ds[self.input_data_key])=}")
 
             for ds in val_datasets:
-                x, y = ds[0]
+                x, y, info_ind = ds[0]
                 print(f"{ds.name} val: len={len(ds)}, x={x.shape}, y={y.shape} (orig:{len(X_val)})")
 
             for ds in test_datasets:
-                x, y = ds[0]
+                x, y, info_ind = ds[0]
                 print(f"{ds.name} test: len={len(ds)}, x={x.shape}, y={y.shape} (orig:{len(X_test)})")
-
 
         return train_datasets, val_datasets, test_datasets
 
@@ -258,19 +291,6 @@ class MedicalDataset(Dataset):
             patch_x = x[:, z0:z0+self.chunk_z, y0:y0+self.chunk_y, x0:x0+self.chunk_x]
             patch_y = y[:, z0:z0+self.chunk_z, y0:y0+self.chunk_y, x0:x0+self.chunk_x]
 
-        elif self.mode == 'chunk':
-
-            # there are about 3 patches per each dimension (3^3) produced for each original volume
-            # this statement will be used for validation and test datasets when evaluating it during the validation and testing stages
-
-            # get the patch indices
-            i, z0, y0, x0 = self.patch_indices[idx] # there are several patches for each volume so it is important to use i from patch_indices to refer to the right original volume
-
-            # extract the patch including all channels
-            patch_x = self.X[i][:, z0:z0+self.chunk_z, y0:y0+self.chunk_y, x0:x0+self.chunk_x]
-            patch_y = self.Y[i][:, z0:z0+self.chunk_z, y0:y0+self.chunk_y, x0:x0+self.chunk_x]
-            info_indiv = self.info[i]
-
         elif self.mode == 'val' or self.mode == 'test':
             #  the validation and test datasets will not be processed here and will be saved as is. 
             #  in the validation and testing stages, each volume will get chunked, ran thru model, stitched back together
@@ -286,9 +306,15 @@ class MedicalDataset(Dataset):
         patch_x = torch.tensor(patch_x, dtype=torch.float32)
         patch_y = torch.tensor(patch_y, dtype=torch.float32)
 
+        if patch_x is None or patch_y is None or info_indiv is None:
+            print(f"Warning {idx} has None data: {patch_x}, {patch_y}, {info_indiv}")
+
+            print(f"Returning shapes: {patch_x.shape if patch_x is not None else None}, "
+                f"{patch_y.shape if patch_y is not None else None}, info={info_indiv}")
+        
         return patch_x, patch_y, info_indiv
 
-def get_dataloaders():
+def get_dataloaders(to_debug=False):
     
     data_loading_utils = DataLoadingUtils()
     dict_datasets = data_loading_utils.load_all_data()
@@ -303,9 +329,12 @@ def get_dataloaders():
     val_combined = data_loading_utils.concat_all_data(val_datasets)
     test_combined = data_loading_utils.concat_all_data(test_datasets)
 
-    print(f"{train_combined.datasets[0].X.shape=}")
-    print(f"{val_combined.datasets[0].X.shape=}")
-    print(f"{test_combined.datasets[0].X.shape=}")
+    # the below print function may not print the processed shape but instead the original shape since get item is storing both possibly
+    if to_debug:
+        print(f"""
+        {train_combined.datasets[0].X.shape=} and {train_combined.datasets[0].Y.shape=})
+        {val_combined.datasets[0].X.shape=} and {val_combined.datasets[0].Y.shape=})
+        {test_combined.datasets[0].X.shape=} and {test_combined.datasets[0].Y.shape=}""")
 
     # get the sampling weights
     weights = data_loading_utils.build_sampling_weights(train_combined, mode='root-proportional')
@@ -314,40 +343,40 @@ def get_dataloaders():
     sampler = WeightedRandomSampler(weights=weights, num_samples=len(weights), replacement=True)
 
     # create data loader
-    train_loader = DataLoader(train_combined, batch_size=2, sampler=sampler)
+    train_loader = DataLoader(train_combined, batch_size=1, sampler=sampler)
     val_loader = DataLoader(val_combined, batch_size=1, shuffle=False)
     test_loader = DataLoader(test_combined, batch_size=1, shuffle=False)
 
     return train_loader, val_loader, test_loader
 
-if __name__ == "__main__":
-    data_loading_utils = DataLoadingUtils()
-    dict_datasets = data_loading_utils.load_all_data()
+# if __name__ == "__main__":
+#     data_loading_utils = DataLoadingUtils()
+#     dict_datasets = data_loading_utils.load_all_data()
 
-    # split the data
-    train_datasets, val_datasets, test_datasets = data_loading_utils.split_all_data(dict_datasets)
+#     # split the data
+#     train_datasets, val_datasets, test_datasets = data_loading_utils.split_all_data(dict_datasets)
 
-    # ocncatenate the datasets
-    # the provided datasets have the type of pytorch dataset 
-    # to get the shape of the ConCat dataset type, do the following: train_combined.datasets[0].X.shape
-    train_combined = data_loading_utils.concat_all_data(train_datasets)
-    val_combined = data_loading_utils.concat_all_data(val_datasets)
-    test_combined = data_loading_utils.concat_all_data(test_datasets)
+#     # ocncatenate the datasets
+#     # the provided datasets have the type of pytorch dataset 
+#     # to get the shape of the ConCat dataset type, do the following: train_combined.datasets[0].X.shape
+#     train_combined = data_loading_utils.concat_all_data(train_datasets)
+#     val_combined = data_loading_utils.concat_all_data(val_datasets)
+#     test_combined = data_loading_utils.concat_all_data(test_datasets)
 
-    print(f"{train_combined.datasets[0].X.shape=} and {train_combined.datasets[0].Y.shape=}")
-    print(f"{val_combined.datasets[0].X.shape=} and {val_combined.datasets[0].Y.shape=}")
-    print(f"{test_combined.datasets[0].X.shape=} and {test_combined.datasets[0].Y.shape=}")
+#     print(f"{train_combined.datasets[0].X.shape=} and {train_combined.datasets[0].Y.shape=}")
+#     print(f"{val_combined.datasets[0].X.shape=} and {val_combined.datasets[0].Y.shape=}")
+#     print(f"{test_combined.datasets[0].X.shape=} and {test_combined.datasets[0].Y.shape=}")
 
-    # get the sampling weights
-    weights = data_loading_utils.build_sampling_weights(train_combined, mode='root-proportional')
+#     # get the sampling weights
+#     weights = data_loading_utils.build_sampling_weights(train_combined, mode='root-proportional')
 
-    # crate weighted random sampler
-    sampler = WeightedRandomSampler(weights=weights, num_samples=len(weights), replacement=True)
+#     # crate weighted random sampler
+#     sampler = WeightedRandomSampler(weights=weights, num_samples=len(weights), replacement=True)
 
-    # create data loader
-    train_loader = DataLoader(train_combined, batch_size=2, sampler=sampler)
-    val_loader = DataLoader(val_combined, batch_size=1, shuffle=False)
-    test_loader = DataLoader(test_combined, batch_size=1, shuffle=False)
+#     # create data loader
+#     train_loader = DataLoader(train_combined, batch_size=2, sampler=sampler)
+#     val_loader = DataLoader(val_combined, batch_size=1, shuffle=False)
+#     test_loader = DataLoader(test_combined, batch_size=1, shuffle=False)
     
 
 

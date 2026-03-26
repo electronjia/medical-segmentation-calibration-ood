@@ -2,15 +2,16 @@ import torch
 from tqdm import tqdm
 import numpy as np
 from config import *
-import segmentation_models_pytorch.metrics as smp_metrics 
 import time
 from torch.amp import autocast, GradScaler
+import segmentation_models_pytorch.metrics as smp_metrics 
 from model_training_utilities import ModelTrainingUtilities
 from monai.inferers import SlidingWindowInferer
 
 save_predictions = ModelTrainingUtilities.save_predictions_as_imgs
+save_gradcam = ModelTrainingUtilities.save_gradcam_overlay_as_imgs
 
-def test_fn(loss_fn, loader, model, device='cuda', save_preds=True):
+def test_fn(loss_fn, loader, model, target_layer, device='cuda', save_preds=True, to_debug=False):
     
     # set the sliding window to obtian 96^3 patches of test volumes, compute predictions, stitch back predictions, and return the stiched prediction
     inferer = SlidingWindowInferer(
@@ -44,17 +45,24 @@ def test_fn(loss_fn, loader, model, device='cuda', save_preds=True):
             batch_pred_bin_list = []
 
             X = X.to(device) # the batch size for test is 1 and the X shape should be 1,1, 160,160,160
-
-            print(f"Make sure the X shape is 1,C,Z,Y,X: {X.shape=}")
-
             y = y.to(device) # Ensure proper shape for BCE loss
-            print(f"Make sure the shape of the label is proper B,C,D,H,W: {y.shape=}")
+
+            # add extra channel to data that only has 2 classes because the model is trained on n_classes=3
+            y_n_classes = y.shape[1]
+            if y_n_classes < n_classes:
+                #  y has shape (B, 2, D, H, W)
+                extra_channel = torch.zeros((y.shape[0], 1, y.shape[2], y.shape[3], y.shape[4]), device=y.device)
+                y = torch.cat([y, extra_channel], dim=1)  # shape now (B, 3, D, H, W)
+
+            if to_debug:
+                print(f"Make sure the X shape is 1,C,Z,Y,X: {X.shape=}")
+                print(f"Make sure the shape of the label is proper B,C,D,H,W: {y.shape=}")
 
             # Forward:  measure inference timing
             start_time = time.time()
        
-            preds = inferer(inputs=X, network=model)
-            loss = loss_fn(preds, y)
+            pred = inferer(inputs=X, network=model)
+            loss = loss_fn(pred, y)
 
             torch.cuda.synchronize()
             end_time = time.time()
@@ -69,19 +77,19 @@ def test_fn(loss_fn, loader, model, device='cuda', save_preds=True):
 
             # Update tqdm loop
             loop.set_postfix(loss=loss.item())
-            # Threshold the channel to compare target and prediction. the shape will change B,C,Z,Y,X -> B,Z,Y,X and loses the one-hot encoding
-            pred_bin = torch.argmax(preds, dim=1)
-            target_bin = torch.argmax(y, dim=1)
+            # Threshold the channel to compare target and prediction. the shape will remain B,C,Z,Y,X 
+            pred_bin = (pred > 0.5).long()
+            target_bin = (y > 0.5).long()
 
             # Get batch-wise stats: shapes [batch_size]
-            tp, fp, fn, tn = smp_metrics.get_stats(pred_bin, target_bin, mode='multiclass')
+            tp, fp, fn, tn = smp_metrics.get_stats(pred_bin, target_bin, num_classes=n_classes, mode='multiclass')
 
             # Calculate batch-wise metrics (with reduction)
-            iou_metric = smp_metrics.iou_score(tp, fp, fn, tn, reduction='micro')
-            dice = smp_metrics.f1_score(tp, fp, fn, tn, reduction='micro')
-            accuracy = smp_metrics.accuracy(tp, fp, fn, tn, reduction='micro')
-            recall = smp_metrics.recall(tp, fp, fn, tn, reduction='micro')
-            specificity = smp_metrics.specificity(tp, fp, fn, tn, reduction='micro')
+            iou_metric = smp_metrics.iou_score(tp, fp, fn, tn, reduction='macro')
+            dice = smp_metrics.f1_score(tp, fp, fn, tn, reduction='macro')
+            accuracy = smp_metrics.accuracy(tp, fp, fn, tn, reduction='macro')
+            recall = smp_metrics.recall(tp, fp, fn, tn, reduction='macro')
+            specificity = smp_metrics.specificity(tp, fp, fn, tn, reduction='macro')
             precision = smp_metrics.precision(tp, fp, fn, tn, reduction='micro')
 
             # Store per batch metrics
@@ -97,7 +105,8 @@ def test_fn(loss_fn, loader, model, device='cuda', save_preds=True):
                 frame_iou_vals = smp_metrics.iou_score(tp, fp, fn, tn, reduction='none').detach().cpu().numpy()
                 
                 batch_pred_bin_list = pred_bin.detach().cpu().float()
-                save_predictions(np.array(frame_iou_vals).flatten(), batch_pred_bin_list, X, info_batch, y, mode='test')
+                save_predictions(iou_scores=np.array(frame_iou_vals).flatten(), pred=batch_pred_bin_list, volume=X, info_batch=info_batch, y=target_bin, mode='test')
+                # save_gradcam(model, target_layer, pred_bin, X, info_batch, y=target_bin, mode='test')
 
     mean_loss = np.mean(losses)  # Correct loss calculation
     

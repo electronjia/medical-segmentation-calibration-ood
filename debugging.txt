@@ -75,3 +75,10 @@ Mar 24, 2026
 - ideas for improving train: generate n_train_samples while doing center jitter. len becomes = len(x) * len(n_train_samples) and in the get_item, introduce a for loop
 - validation and test evaluation, i can use monai for chunking data, predicting, and stitching chunks back
 - make sure the loss function accepts the format of predictions and labels which is batch number, zyx
+
+Mar 25, 2026
+- i have 3 classes in some of my dataset so i need to choose n_classes=3. the prediction should be in the form of BCZYX and match label shape
+- explaining how model and loss will work. Input to model is volume with shape BCZYX and model n_classes=3. Model should output BCZYX which aligns with current label shape BCZYX. Loss function accepts BCZYX shape but make sure to_one_hot_y=False
+- test with one data hippocampus first to make sure everything runs properly before training on all of the data
+- dataloader breaks if there is None anywhere: inside arrays, dictionaries, lists etc
+- it seems like dataset after get_item stores both the original 160^3 and center jitter with 96^3 shape so need to be a bit careful when printing this new dataset

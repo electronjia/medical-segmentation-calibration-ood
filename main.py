@@ -17,7 +17,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import time
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from data_loading_utils import get_dataloaders
-from monai.networks.nets import UNet
+from monai.networks.nets import UNet, SegResNet
 from early_stopping import EarlyStopping
 
 class ModelTrainer():
@@ -53,7 +53,7 @@ class ModelTrainer():
         torch.backends.cudnn.deterministic = True  # Make CuDNN deterministic
         torch.backends.cudnn.benchmark = False  # Avoids non-deterministic behavior
 
-    def save_weights(self, filename_to_save,  model, start_time, optimizer, epoch, val_iou):
+    def save_weights(self, filename_to_save,  model, start_time, optimizer, epoch, val_iou, info_batch_val, dice_list_val, info_batch_test=None, dice_list_test=None):
         # Save weights
         print(filename_to_save)
 
@@ -68,6 +68,10 @@ class ModelTrainer():
                 'final_lr': optimizer.param_groups[0]['lr'],
                 'epoch': epoch + 1,
                 'val_iou': val_iou,
+                'info_batch_val': info_batch_val,
+                'info_batch_test': info_batch_test,
+                'dice_list_val': dice_list_val,
+                'dice_list_test': dice_list_test
                 }
             }, os.path.join('model_checkpoints', filename_to_save))
         
@@ -87,8 +91,8 @@ class ModelTrainer():
             str(self.timestamp)
         ]) + ".pth"
         optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
-        scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.2, patience=20, min_lr=1e-5)
-        early_stopper = EarlyStopping(patience=15, min_delta=0.001, mode='max')
+        scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.2, patience=10, min_lr=1e-5)
+        early_stopper = EarlyStopping(patience=20, min_delta=0.001, mode='max')
 
         target_layer = None
         try:
@@ -131,7 +135,7 @@ class ModelTrainer():
 
                 # Validation
                 epoch_start = time.time()
-                (val_loss_val,
+                (info_batch_val, dice_score_val, val_loss_val,
                     val_dice,
                     val_iou,
                     val_precision,
@@ -173,7 +177,10 @@ class ModelTrainer():
 
                 # Validation 
                 epoch_start = time.time()                 
-                (val_loss_val,
+                (
+                    info_batch_val, 
+                    dice_score_val,
+                    val_loss_val,
                     val_dice,
                     val_iou,
                     val_precision,
@@ -226,7 +233,7 @@ class ModelTrainer():
 
             if is_best:
                 # Save weights
-                self.save_weights(filename_to_save, self.model, start_time, optimizer, epoch, val_iou)
+                self.save_weights(filename_to_save, self.model, start_time, optimizer, epoch, val_iou, info_batch_val, dice_score_val)
 
 
             if should_stop:
@@ -249,7 +256,10 @@ class ModelTrainer():
                     )
 
                 # Validation
-                (val_loss_val,
+                (
+                    info_batch_val, 
+                    dice_score_val,
+                    val_loss_val,
                     val_dice,
                     val_iou,
                     val_precision,
@@ -275,7 +285,7 @@ class ModelTrainer():
         # Test the model after training
         print(f"Testing model after epoch {epoch+1}")
         epoch_start = time.time()
-        (test_loss_val,
+        (info_batch_test, dice_score_test, test_loss_val,
             test_dice,
             test_iou,
             test_precision,
@@ -314,7 +324,7 @@ class ModelTrainer():
 
 
         # Save weights in case early stopping was not triggered
-        self.save_weights(filename_to_save, self.model, start_time, optimizer, epoch, val_iou)
+        self.save_weights(filename_to_save, self.model, start_time, optimizer, epoch, val_iou, info_batch_val, dice_score_val, info_batch_test, dice_score_test)
 
 def main():
 
@@ -334,8 +344,18 @@ def main():
         num_res_units=2,      # residual blocks per level
     ).to(device)
 
+    # model = SegResNet(
+    #     spatial_dims=3,
+    #     in_channels=1,
+    #     out_channels=n_classes,      
+    #     init_filters=16,     # base width
+    #     dropout_prob=0.2,
+    # ).to(device)
+
+    
+
     # Set seed for reproducibility
-    trainer = ModelTrainer(model=None, loss_fn=loss_fn)
+    trainer = ModelTrainer(model=model, loss_fn=loss_fn)
 
     # Start training
     trainer.train()

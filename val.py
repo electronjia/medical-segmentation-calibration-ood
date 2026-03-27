@@ -27,6 +27,7 @@ def val_fn(loss_fn, loader, model, target_layer, device='cuda', save_preds=True,
 
     # The following are used to compute the average performance for one epoch, average is computed one single time and not across the batches.
     losses = []
+    info_batch_list = []
     dice_score_val = []
     iou_score_val = []
     precision_score_val = []
@@ -38,6 +39,7 @@ def val_fn(loss_fn, loader, model, target_layer, device='cuda', save_preds=True,
 
     # The following loop loads the batches: X will have 16 frames, etc
     for batch_idx, (X, y, info_batch) in enumerate(loop):
+        info_batch_list.append(info_batch)
 
         # wrap in torch no grad:
         with torch.no_grad():
@@ -120,4 +122,4 @@ def val_fn(loss_fn, loader, model, target_layer, device='cuda', save_preds=True,
     mean_accuracy = np.mean(accuracy_score_val) * 100
     mean_inference_time_per_frame = total_inference_time / total_frames
 
-    return mean_loss, mean_dice, mean_iou, mean_precision, mean_recall, mean_specificity, mean_accuracy, mean_inference_time_per_frame
+    return info_batch_list, dice_score_val, mean_loss, mean_dice, mean_iou, mean_precision, mean_recall, mean_specificity, mean_accuracy, mean_inference_time_per_frame

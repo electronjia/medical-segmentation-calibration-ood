@@ -107,7 +107,7 @@ class DataLoadingUtils():
 
         datasets = {}
 
-        for file in os.listdir(self.preprocessed_data_path)[:1]:
+        for file in os.listdir(self.preprocessed_data_path)[:]:
 
             if file.endswith(".h5"):
                 name = file.replace(".h5", "")

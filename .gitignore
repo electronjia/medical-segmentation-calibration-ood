@@ -199,3 +199,5 @@ preprocessed_data/
 runs/
 results/
 model_checkpoints/
+plots_by_tag/
+tables_by_tag/

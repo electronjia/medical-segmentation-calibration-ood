@@ -108,4 +108,4 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 n_classes = 3
 lr = 10.0e-5
 num_epochs = 150
-experiment_details = 'all_3dunet'
+experiment_details = 'all_segresnet'

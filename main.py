@@ -335,22 +335,22 @@ def main():
         reduction='mean'
         )
 
-    model = UNet(
-        spatial_dims=3,      # 3D
-        in_channels=1,        # grayscale CT input
-        out_channels=n_classes, 
-        channels=(16, 32, 64, 128),  # smaller channels for speed
-        strides=(2, 2, 2),
-        num_res_units=2,      # residual blocks per level
-    ).to(device)
-
-    # model = SegResNet(
-    #     spatial_dims=3,
-    #     in_channels=1,
-    #     out_channels=n_classes,      
-    #     init_filters=16,     # base width
-    #     dropout_prob=0.2,
+    # model = UNet(
+    #     spatial_dims=3,      # 3D
+    #     in_channels=1,        # grayscale CT input
+    #     out_channels=n_classes, 
+    #     channels=(16, 32, 64, 128),  # smaller channels for speed
+    #     strides=(2, 2, 2),
+    #     num_res_units=2,      # residual blocks per level
     # ).to(device)
+
+    model = SegResNet(
+        spatial_dims=3,
+        in_channels=1,
+        out_channels=n_classes,      
+        init_filters=16,     # base width
+        dropout_prob=0.2,
+    ).to(device)
 
     
 

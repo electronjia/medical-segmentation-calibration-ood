@@ -274,13 +274,18 @@ class PreProcessor:
 
         # unique datasets in the excel file
         unique_datasets = df[self.dataset_name_col].unique()
-        unique_datasets = unique_datasets
+
+        if to_debug:
+            unique_datasets = unique_datasets[:1]
         # task 3 liver did not work out due to data issues. task 5 spleen [index 8] did not work due to
 
         # Iterate through each row in the dataframe and load the volumes
         for unique_dataset in unique_datasets:
             df_subset = df[df[self.dataset_name_col] == unique_dataset]
             df_subset = df_subset.reset_index(drop=True)
+
+            if to_debug:
+                df_subset = df_subset[:1]
             
             object = df_subset[self.object_col].iloc[0].lower() # get the object name for the dataset, and make it lowercase for consistency
                

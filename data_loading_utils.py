@@ -8,6 +8,7 @@ import pandas as pd
 from config import *
 import torch
 from torch.utils.data import WeightedRandomSampler, Dataset, ConcatDataset, DataLoader
+from pre_processing import PreProcessor
 
 class DataLoadingUtils():
 
@@ -34,7 +35,7 @@ class DataLoadingUtils():
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)
 
-    def load_h5_dataset(self, file_path):
+    def load_h5_dataset(self, file_path, to_debug=False):
         # this function will load the h5 file using the defined key parameters
 
         data = {}
@@ -42,7 +43,11 @@ class DataLoadingUtils():
         with h5py.File(file_path, "r") as file:
             for k in [self.input_data_key, self.label_data_key]:
                 if k in file:
-                    data[k] = file[k][:]
+
+                    if to_debug:
+                        data[k] = file[k][:1]
+                    else:
+                        data[k] = file[k][:]
 
             # loading info from h5 file is a little bit different because it is a "scalar" and reqiures [()]
             info_bytes = file[self.data_info_key][()]  # scalar from HDF5
@@ -103,11 +108,15 @@ class DataLoadingUtils():
 
         return X[train_idxs], Y[train_idxs], train_info, X[val_idxs], Y[val_idxs], val_info, X[test_idxs],  Y[test_idxs], test_info
     
-    def load_all_data(self):
+    def load_all_data(self, to_debug=False):
 
         datasets = {}
 
         for file in os.listdir(self.preprocessed_data_path)[:]:
+
+            if to_debug:
+                if "sliver" not in file.lower():
+                    continue
 
             if file.endswith(".h5"):
                 name = file.replace(".h5", "")
@@ -223,6 +232,10 @@ class MedicalDataset(Dataset):
         if self.mode != "train":
             self.patch_indices = self.build_patch_index()
 
+        # initiate class
+        pre_processor_cls = PreProcessor()
+        self.debugging_plotting = pre_processor_cls.save_plots_for_debugging
+
     def build_patch_index(self):
         """
         The input arrays were stored in h5 files as 1,Z,Y,X while the label arrays either had 2 or 3 classes and were stored as 2,Z,Y,X or 3,Z,Y,X.
@@ -258,8 +271,7 @@ class MedicalDataset(Dataset):
         else:
             print("Define the mode.")
 
-    def __getitem__(self, idx):
-
+    def __getitem__(self, idx, to_debug=False):
         if self.mode == "train":
 
             # only one patch will be saved for the train
@@ -301,6 +313,10 @@ class MedicalDataset(Dataset):
         # apply transforms if any (on the patch, not the full volume)
         if self.transform:
             patch_x, patch_y = self.transform(patch_x, patch_y)
+
+        # debugging
+        if to_debug:
+            self.debugging_plotting(patch_x[0,:,:,:].transpose(2,1,0), patch_y[1,:,:,:].transpose(2,1,0), slice_number=37, processing_type="jitter", dataset_name=info_indiv['dataset'], case_number=info_indiv['case_number'])
 
         # convert to PyTorch tensors
         patch_x = torch.tensor(patch_x, dtype=torch.float32)
@@ -362,6 +378,9 @@ def get_dataloaders(to_debug=False):
 #     train_combined = data_loading_utils.concat_all_data(train_datasets)
 #     val_combined = data_loading_utils.concat_all_data(val_datasets)
 #     test_combined = data_loading_utils.concat_all_data(test_datasets)
+
+#     # for debuggin
+#     # sample = train_combined[0]
 
 #     print(f"{train_combined.datasets[0].X.shape=} and {train_combined.datasets[0].Y.shape=}")
 #     print(f"{val_combined.datasets[0].X.shape=} and {val_combined.datasets[0].Y.shape=}")

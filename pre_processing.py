@@ -268,7 +268,7 @@ class PreProcessor:
 
         return obj
 
-    def process_all_volumes(self, to_print=True, to_debug=True):
+    def process_all_volumes(self, to_print=False, to_debug=False):
         # Read the excel file containing the file paths
         df = pd.read_excel(self.excel_paths)
 
@@ -361,18 +361,20 @@ class PreProcessor:
                     print(f"{label_array.shape=}, {resampled_label_array.shape=}, {cropped_label_array.shape=}")
                     print(f"{orig_z_slice=}, {resampled_z_slice=}, {cropped_z_slice=}")
                 
-                # 4️⃣ normalize image                
-                cropped_input_array[cropped_input_array < 0] = 0 # set the negative volume to 0
-                cropped_input_array = cropped_input_array / (input_std + 1e-8)
+                # 4️⃣ normalize image  
+                norm_input_array = cropped_input_array.copy()              
+                norm_input_array[norm_input_array < 0] = 0 # set the negative volume to 0
+                norm_input_array = norm_input_array / (input_std + 1e-8)
 
                 if to_print:
                     self.save_plots_for_debugging(input_array, label_array, slice_number=orig_z_slice, processing_type=f"", dataset_name=unique_dataset.lower(), case_number=case_number)
                     self.save_plots_for_debugging(resampled_input_array, resampled_label_array, slice_number=resampled_z_slice, processing_type="resampling", dataset_name=unique_dataset.lower(), case_number=case_number)
                     self.save_plots_for_debugging(cropped_input_array, cropped_label_array, slice_number=cropped_z_slice, processing_type=f"cropping", dataset_name=unique_dataset.lower(), case_number=case_number)
+                    self.save_plots_for_debugging(norm_input_array, cropped_label_array, slice_number=cropped_z_slice, processing_type=f"norm", dataset_name=unique_dataset.lower(), case_number=case_number)
 
 
                 # 5️⃣ final channel dimension and add channel dimension for pytorch
-                final_input = self.final_channel_dimension(cropped_input_array, lambda x: np.transpose(x, (2,1,0))) # transpose to ( z, y, x)
+                final_input = self.final_channel_dimension(norm_input_array, lambda x: np.transpose(x, (2,1,0))) # transpose to ( z, y, x)
                 final_input = final_input[np.newaxis, ...] # add channel dimension to the input array, so the shape becomes (1, z, y, x) for pytorch
                 final_label = self.final_channel_dimension(cropped_label_array, lambda x: np.transpose(x, (2,1,0))) # transpose to ( z, y, x)
 
@@ -413,7 +415,7 @@ class PreProcessor:
                     'resampled_label_physical_size': self.convert_for_json(np.array(resampled_input_spacing) * (np.array(resampled_seg_extent[1::2])- np.array(resampled_seg_extent[0::2]))),
                     'resampled_label_bounding_box_size': self.convert_for_json((np.array(resampled_seg_extent[1::2])- np.array(resampled_seg_extent[0::2]))),
 
-                    'cropped_input_shape': self.convert_for_json(cropped_input_array.shape),
+                    'cropped_input_shape': self.convert_for_json(norm_input_array.shape),
                     'cropped_label_shape': self.convert_for_json(cropped_label_array.shape),
                     'cropping_slices': self.convert_for_json(slices),
                     'cropping_pad_width': self.convert_for_json(pad_width),
